@@ -1540,10 +1540,10 @@
     <string name="phone_entered_scm_text">Entered SMS Callback Mode</string>
     <!-- SCM: Notification title -->
     <string name="phone_in_scm_notification_title">SMS Callback Mode</string>
-    <!-- SCM: Displays the time when SCM will end, Example: "No Data Connection until 10:45 AM" -->
+    <!-- SCM: Displays the time when SCM will end, Example: "Since 10:45 AM" -->
     <string name="phone_in_scm_notification_complete_time">Since <xliff:g id="completeTime">%s</xliff:g></string>
     <!-- SCM: Dialog box message for exiting from the notifications screen -->
-    <string name="alert_dialog_exit_scm">The phone is in SMS Callback mode. While in this mode, no apps using a data connection can be used. Do you want to exit now?</string>
+    <string name="alert_dialog_exit_scm">The phone is in SMS Callback mode. Do you want to exit now?</string>
     <!-- SCM: Dialog box message for exiting from any other app -->
     <string name="alert_dialog_not_avaialble_in_scm">The selected action isn\'t available while in the SMS Callback mode.Do you want to exit now?</string>
     <!-- SCM: Dialog box message while in emergency call -->
@@ -2098,10 +2098,15 @@
     <!-- Title for simulating device out of service. -->
     <string name="simulate_out_of_service_string">Simulate Out of Service (Debug Build only)</string>
 
+    <!-- Title for enforcing satellite channels. -->
+    <string name="enforce_satellite_channel_string">Force Camp Satellite LTE Channel (Debug Build only)</string>
+
     <!-- Title for simulating SIM capable of satellite. -->
     <string name="mock_carrier_roaming_satellite_string">Mock Carrier Satellite Mode (Debug Build only)</string>
     <!-- Title for trigger real satellite eSOS. -->
     <string name="esos_satellite_string">Test real satellite eSOS mode (Debug Build only)</string>
+    <!-- Title for enable real satellite non-emergency mode. -->
+    <string name="satellite_enable_non_emergency_mode_string">Test real satellite non-eSOS mode (Debug Build only)</string>
 
     <!-- Phone Info screen. Menu item label.  Used for diagnostic info screens, precise translation isn't needed -->
     <string name="radioInfo_menu_viewADN">View SIM Address Book</string>
