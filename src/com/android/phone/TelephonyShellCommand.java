@@ -34,6 +34,7 @@ import android.os.PersistableBundle;
 import android.os.Process;
 import android.os.RemoteException;
 import android.os.ServiceSpecificException;
+import android.os.UserHandle;
 import android.provider.BlockedNumberContract;
 import android.telephony.BarringInfo;
 import android.telephony.CarrierConfigManager;
@@ -211,6 +212,8 @@ public class TelephonyShellCommand extends BasicShellCommandHandler {
             "set-should-send-datagram-to-modem-in-demo-mode";
     private static final String SET_IS_SATELLITE_COMMUNICATION_ALLOWED_FOR_CURRENT_LOCATION_CACHE =
             "set-is-satellite-communication-allowed-for-current-location-cache";
+    private static final String SET_SATELLITE_SUBSCRIBERID_LIST_CHANGED_INTENT_COMPONENT =
+            "set-satellite-subscriberid-list-changed-intent-component";
 
     private static final String DOMAIN_SELECTION_SUBCOMMAND = "domainselection";
     private static final String DOMAIN_SELECTION_SET_SERVICE_OVERRIDE = "set-dss-override";
@@ -426,6 +429,8 @@ public class TelephonyShellCommand extends BasicShellCommandHandler {
                 return handleSetOemEnabledSatelliteProvisionStatus();
             case SET_IS_SATELLITE_COMMUNICATION_ALLOWED_FOR_CURRENT_LOCATION_CACHE:
                 return handleSetIsSatelliteCommunicationAllowedForCurrentLocationCache();
+            case SET_SATELLITE_SUBSCRIBERID_LIST_CHANGED_INTENT_COMPONENT:
+                return handleSetSatelliteSubscriberIdListChangedIntentComponent();
             default: {
                 return handleDefaultCommands(cmd);
             }
@@ -1163,7 +1168,8 @@ public class TelephonyShellCommand extends BasicShellCommandHandler {
         }
         // Verify that the user is allowed to run the command. Only allowed in rooted device in a
         // non user build.
-        if (Binder.getCallingUid() != Process.ROOT_UID || TelephonyUtils.IS_USER) {
+        if (!UserHandle.isSameApp(Binder.getCallingUid(), Process.ROOT_UID)
+                || TelephonyUtils.IS_USER) {
             errPw.println("cc: Permission denied.");
             return -1;
         }
@@ -1745,14 +1751,15 @@ public class TelephonyShellCommand extends BasicShellCommandHandler {
 
     private boolean checkShellUid() {
         // adb can run as root or as shell, depending on whether the device is rooted.
-        return Binder.getCallingUid() == Process.SHELL_UID
-                || Binder.getCallingUid() == Process.ROOT_UID;
+        return UserHandle.isSameApp(Binder.getCallingUid(), Process.SHELL_UID)
+                || UserHandle.isSameApp(Binder.getCallingUid(), Process.ROOT_UID);
     }
 
     private int handleCcCommand() {
         // Verify that the user is allowed to run the command. Only allowed in rooted device in a
         // non user build.
-        if (Binder.getCallingUid() != Process.ROOT_UID || TelephonyUtils.IS_USER) {
+        if (!UserHandle.isSameApp(Binder.getCallingUid(), Process.ROOT_UID)
+                || TelephonyUtils.IS_USER) {
             getErrPrintWriter().println("cc: Permission denied.");
             return -1;
         }
@@ -2308,7 +2315,8 @@ public class TelephonyShellCommand extends BasicShellCommandHandler {
     private int handleRestartModemCommand() {
         // Verify that the user is allowed to run the command. Only allowed in rooted device in a
         // non user build.
-        if (Binder.getCallingUid() != Process.ROOT_UID || TelephonyUtils.IS_USER) {
+        if (!UserHandle.isSameApp(Binder.getCallingUid(), Process.ROOT_UID)
+                || TelephonyUtils.IS_USER) {
             getErrPrintWriter().println("RestartModem: Permission denied.");
             return -1;
         }
@@ -2322,7 +2330,8 @@ public class TelephonyShellCommand extends BasicShellCommandHandler {
     private int handleGetImei() {
         // Verify that the user is allowed to run the command. Only allowed in rooted device in a
         // non user build.
-        if (Binder.getCallingUid() != Process.ROOT_UID || TelephonyUtils.IS_USER) {
+        if (!UserHandle.isSameApp(Binder.getCallingUid(), Process.ROOT_UID)
+                || TelephonyUtils.IS_USER) {
             getErrPrintWriter().println("Device IMEI: Permission denied.");
             return -1;
         }
@@ -2353,7 +2362,8 @@ public class TelephonyShellCommand extends BasicShellCommandHandler {
     private int handleUnattendedReboot() {
         // Verify that the user is allowed to run the command. Only allowed in rooted device in a
         // non user build.
-        if (Binder.getCallingUid() != Process.ROOT_UID || TelephonyUtils.IS_USER) {
+        if (!UserHandle.isSameApp(Binder.getCallingUid(), Process.ROOT_UID)
+                || TelephonyUtils.IS_USER) {
             getErrPrintWriter().println("UnattendedReboot: Permission denied.");
             return -1;
         }
@@ -2367,7 +2377,8 @@ public class TelephonyShellCommand extends BasicShellCommandHandler {
     private int handleGetSimSlotsMapping() {
         // Verify that the user is allowed to run the command. Only allowed in rooted device in a
         // non user build.
-        if (Binder.getCallingUid() != Process.ROOT_UID || TelephonyUtils.IS_USER) {
+        if (!UserHandle.isSameApp(Binder.getCallingUid(), Process.ROOT_UID)
+                || TelephonyUtils.IS_USER) {
             getErrPrintWriter().println("GetSimSlotsMapping: Permission denied.");
             return -1;
         }
@@ -3824,6 +3835,54 @@ public class TelephonyShellCommand extends BasicShellCommandHandler {
         } catch (RemoteException e) {
             Log.w(LOG_TAG, "setIsSatelliteCommunicationAllowedForCurrentLocationCache("
                     + state + "), error = " + e.getMessage());
+            errPw.println("Exception: " + e.getMessage());
+            return -1;
+        }
+        return 0;
+    }
+
+    private int handleSetSatelliteSubscriberIdListChangedIntentComponent() {
+        final String cmd = SET_SATELLITE_SUBSCRIBERID_LIST_CHANGED_INTENT_COMPONENT;
+        PrintWriter errPw = getErrPrintWriter();
+        String opt;
+        String name;
+
+        if ((opt = getNextArg()) == null) {
+            errPw.println("adb shell cmd phone " + cmd + ": Invalid Argument");
+            return -1;
+        } else {
+            switch (opt) {
+                case "-p": {
+                    name = opt + "/" + "android.telephony.cts";
+                    break;
+                }
+                case "-c": {
+                    name = opt + "/" + "android.telephony.cts.SatelliteReceiver";
+                    break;
+                }
+                case "-r": {
+                    name = "reset";
+                    break;
+                }
+                default:
+                    errPw.println("adb shell cmd phone " + cmd + ": Invalid Argument");
+                    return -1;
+            }
+        }
+
+        Log.d(LOG_TAG, "handleSetSatelliteSubscriberIdListChangedIntentComponent("
+                + name + ")");
+
+        try {
+            boolean result = mInterface.setSatelliteSubscriberIdListChangedIntentComponent(name);
+            if (VDBG) {
+                Log.v(LOG_TAG, "handleSetSatelliteSubscriberIdListChangedIntentComponent "
+                        + "returns: " + result);
+            }
+            getOutPrintWriter().println(result);
+        } catch (RemoteException e) {
+            Log.w(LOG_TAG, "handleSetSatelliteSubscriberIdListChangedIntentComponent("
+                    + name + "), error = " + e.getMessage());
             errPw.println("Exception: " + e.getMessage());
             return -1;
         }
