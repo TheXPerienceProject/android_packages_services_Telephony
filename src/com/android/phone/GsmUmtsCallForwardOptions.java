@@ -103,6 +103,10 @@ public class GsmUmtsCallForwardOptions extends TimeConsumingPreferenceActivity
     protected void onCreate(Bundle icicle) {
         super.onCreate(icicle);
 
+        getWindow().addSystemFlags(
+                android.view.WindowManager.LayoutParams
+                        .SYSTEM_FLAG_HIDE_NON_SYSTEM_OVERLAY_WINDOWS);
+
         addPreferencesFromResource(R.xml.callforward_options);
 
         mSubscriptionInfoHelper = new SubscriptionInfoHelper(this, getIntent());
@@ -533,6 +537,9 @@ public class GsmUmtsCallForwardOptions extends TimeConsumingPreferenceActivity
                     break;
                 case CommandsInterface.CF_REASON_NOT_REACHABLE:
                     mButtonCFNRc.onPickActivityResult(cursor.getString(0));
+                    break;
+                case CommandsInterface.CF_REASON_NOT_LOGGED_IN:
+                    mButtonCFNL.onPickActivityResult(cursor.getString(0));
                     break;
                 default:
                     // TODO: may need exception here.
