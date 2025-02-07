@@ -82,7 +82,7 @@ import android.telephony.Rlog;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.satellite.EarfcnRange;
-import android.telephony.satellite.ISatelliteCommunicationAllowedStateCallback;
+import android.telephony.satellite.ISatelliteCommunicationAccessStateCallback;
 import android.telephony.satellite.ISatelliteDisallowedReasonsCallback;
 import android.telephony.satellite.ISatelliteProvisionStateCallback;
 import android.telephony.satellite.SatelliteAccessConfiguration;
@@ -387,8 +387,8 @@ public class SatelliteAccessController extends Handler {
      * Map key: binder of the callback, value: callback to receive the satellite communication
      * allowed state changed events.
      */
-    private final ConcurrentHashMap<IBinder, ISatelliteCommunicationAllowedStateCallback>
-            mSatelliteCommunicationAllowedStateChangedListeners = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<IBinder, ISatelliteCommunicationAccessStateCallback>
+            mSatelliteCommunicationAccessStateChangedListeners = new ConcurrentHashMap<>();
     protected final Object mSatelliteCommunicationAllowStateLock = new Object();
     @GuardedBy("mSatelliteCommunicationAllowStateLock")
     protected boolean mCurrentSatelliteAllowedState = false;
@@ -411,6 +411,7 @@ public class SatelliteAccessController extends Handler {
     // Key: SatelliteManager#SatelliteDisallowedReason; Value: Notification
     private final Map<Integer, Notification> mSatelliteUnAvailableNotifications = new HashMap<>();
     private NotificationManager mNotificationManager;
+    @GuardedBy("mSatelliteDisallowedReasonsLock")
     private final List<Integer> mSatelliteDisallowedReasons = new ArrayList<>();
 
     private boolean mIsLocationManagerEnabled = false;
@@ -553,17 +554,17 @@ public class SatelliteAccessController extends Handler {
                                 }
                             }, false);
                     mSatelliteController.incrementResultReceiverCount(caller);
-                    if (mSatelliteDisallowedReasons.contains(
-                            Integer.valueOf(SATELLITE_DISALLOWED_REASON_NOT_SUPPORTED))) {
-                        mSatelliteDisallowedReasons.remove(
-                                Integer.valueOf(SATELLITE_DISALLOWED_REASON_NOT_SUPPORTED));
+                    if (isReasonPresentInSatelliteDisallowedReasons(
+                            SATELLITE_DISALLOWED_REASON_NOT_SUPPORTED)) {
+                        removeReasonFromSatelliteDisallowedReasons(
+                                SATELLITE_DISALLOWED_REASON_NOT_SUPPORTED);
                         handleEventDisallowedReasonsChanged();
                     }
                 } else {
-                    if (!mSatelliteDisallowedReasons.contains(
-                            Integer.valueOf(SATELLITE_DISALLOWED_REASON_NOT_SUPPORTED))) {
-                        mSatelliteDisallowedReasons.add(
-                                Integer.valueOf(SATELLITE_DISALLOWED_REASON_NOT_SUPPORTED));
+                    if (!isReasonPresentInSatelliteDisallowedReasons(
+                            SATELLITE_DISALLOWED_REASON_NOT_SUPPORTED)) {
+                        addReasonToSatelliteDisallowedReasons(
+                                SATELLITE_DISALLOWED_REASON_NOT_SUPPORTED);
                         handleEventDisallowedReasonsChanged();
                     }
                 }
@@ -589,16 +590,16 @@ public class SatelliteAccessController extends Handler {
                                 }
                             }, false);
                     mSatelliteController.incrementResultReceiverCount(caller);
-                    if (mSatelliteDisallowedReasons.contains(
+                    if (isReasonPresentInSatelliteDisallowedReasons(
                             SATELLITE_DISALLOWED_REASON_NOT_PROVISIONED)) {
-                        mSatelliteDisallowedReasons.remove(
-                                Integer.valueOf(SATELLITE_DISALLOWED_REASON_NOT_PROVISIONED));
+                        removeReasonFromSatelliteDisallowedReasons(
+                                SATELLITE_DISALLOWED_REASON_NOT_PROVISIONED);
                         handleEventDisallowedReasonsChanged();
                     }
                 } else {
-                    if (!mSatelliteDisallowedReasons.contains(
+                    if (!isReasonPresentInSatelliteDisallowedReasons(
                             SATELLITE_DISALLOWED_REASON_NOT_PROVISIONED)) {
-                        mSatelliteDisallowedReasons.add(
+                        addReasonToSatelliteDisallowedReasons(
                                 SATELLITE_DISALLOWED_REASON_NOT_PROVISIONED);
                         handleEventDisallowedReasonsChanged();
                     }
@@ -1492,25 +1493,25 @@ public class SatelliteAccessController extends Handler {
         Integer disallowedReason = getDisallowedReason(resultCode, allowed);
         boolean isChanged = false;
         if (disallowedReason != SATELLITE_DISALLOWED_REASON_NONE) {
-            if (!mSatelliteDisallowedReasons.contains(disallowedReason)) {
+            if (!isReasonPresentInSatelliteDisallowedReasons(disallowedReason)) {
                 isChanged = true;
             }
         } else {
-            if (mSatelliteDisallowedReasons.isEmpty()) {
+            if (isSatelliteDisallowedReasonsEmpty()) {
                 if (!hasAlreadyNotified(KEY_AVAILABLE_NOTIFICATION_SHOWN)) {
                     isChanged = true;
                 }
             }
-            if (mSatelliteDisallowedReasons.contains(
+            if (isReasonPresentInSatelliteDisallowedReasons(
                     SATELLITE_DISALLOWED_REASON_NOT_IN_ALLOWED_REGION)
-                    || mSatelliteDisallowedReasons.contains(
+                    || isReasonPresentInSatelliteDisallowedReasons(
                     SATELLITE_DISALLOWED_REASON_LOCATION_DISABLED)) {
                 isChanged = true;
             }
         }
-        mSatelliteDisallowedReasons.removeAll(DISALLOWED_REASONS_TO_BE_RESET);
+        removeAllReasonsFromSatelliteDisallowedReasons(DISALLOWED_REASONS_TO_BE_RESET);
         if (disallowedReason != SATELLITE_DISALLOWED_REASON_NONE) {
-            mSatelliteDisallowedReasons.add(disallowedReason);
+            addReasonToSatelliteDisallowedReasons(disallowedReason);
         }
         if (isChanged) {
             handleEventDisallowedReasonsChanged();
@@ -1537,8 +1538,11 @@ public class SatelliteAccessController extends Handler {
             logd("showSatelliteSystemNotification: NotificationManager is null");
             return;
         }
-        logd("mSatelliteDisallowedReasons:"
-                + String.join(", ", mSatelliteDisallowedReasons.toString()));
+
+        List<Integer> satelliteDisallowedReasons = getSatelliteDisallowedReasonsCopy();
+        plogd("getSatelliteDisallowedReasons: satelliteDisallowedReasons:"
+                + String.join(", ", satelliteDisallowedReasons.toString()));
+
         notifySatelliteDisallowedReasonsChanged();
         if (mSatelliteController.isSatelliteSystemNotificationsEnabled(
                 CarrierConfigManager.CARRIER_ROAMING_NTN_CONNECT_MANUAL)
@@ -1565,7 +1569,7 @@ public class SatelliteAccessController extends Handler {
             return;
         }
 
-        if (mSatelliteDisallowedReasons.isEmpty()) {
+        if (isSatelliteDisallowedReasonsEmpty()) {
             mNotificationManager.cancel(UNAVAILABLE_NOTIFICATION_TAG, NOTIFICATION_ID);
             if (!hasAlreadyNotified(KEY_AVAILABLE_NOTIFICATION_SHOWN)) {
                 mNotificationManager.notifyAsUser(
@@ -1808,17 +1812,17 @@ public class SatelliteAccessController extends Handler {
         }
 
         if (isDefaultMsgAppSupported) {
-            if (mSatelliteDisallowedReasons.contains(Integer.valueOf(
-                    SATELLITE_DISALLOWED_REASON_UNSUPPORTED_DEFAULT_MSG_APP))) {
-                mSatelliteDisallowedReasons.remove(Integer.valueOf(
-                        SATELLITE_DISALLOWED_REASON_UNSUPPORTED_DEFAULT_MSG_APP));
+            if (isReasonPresentInSatelliteDisallowedReasons(
+                    SATELLITE_DISALLOWED_REASON_UNSUPPORTED_DEFAULT_MSG_APP)) {
+                removeReasonFromSatelliteDisallowedReasons(
+                        SATELLITE_DISALLOWED_REASON_UNSUPPORTED_DEFAULT_MSG_APP);
                 handleEventDisallowedReasonsChanged();
             }
         } else {
-            if (!mSatelliteDisallowedReasons.contains(Integer.valueOf(
-                    SATELLITE_DISALLOWED_REASON_UNSUPPORTED_DEFAULT_MSG_APP))) {
-                mSatelliteDisallowedReasons.add(Integer.valueOf(
-                        SATELLITE_DISALLOWED_REASON_UNSUPPORTED_DEFAULT_MSG_APP));
+            if (!isReasonPresentInSatelliteDisallowedReasons(
+                    SATELLITE_DISALLOWED_REASON_UNSUPPORTED_DEFAULT_MSG_APP)) {
+                addReasonToSatelliteDisallowedReasons(
+                        SATELLITE_DISALLOWED_REASON_UNSUPPORTED_DEFAULT_MSG_APP);
                 handleEventDisallowedReasonsChanged();
             }
         }
@@ -2696,22 +2700,21 @@ public class SatelliteAccessController extends Handler {
      * @return The {@link SatelliteManager.SatelliteResult} result of the operation.
      */
     @SatelliteManager.SatelliteResult
-    public int registerForCommunicationAllowedStateChanged(int subId,
-            @NonNull ISatelliteCommunicationAllowedStateCallback callback) {
+    public int registerForCommunicationAccessStateChanged(int subId,
+            @NonNull ISatelliteCommunicationAccessStateCallback callback) {
         if (!mFeatureFlags.oemEnabledSatelliteFlag()) {
-            plogd("registerForCommunicationAllowedStateChanged: oemEnabledSatelliteFlag is "
+            plogd("registerForCommunicationAccessStateChanged: oemEnabledSatelliteFlag is "
                     + "disabled");
             return SatelliteManager.SATELLITE_RESULT_REQUEST_NOT_SUPPORTED;
         }
 
-        mSatelliteCommunicationAllowedStateChangedListeners.put(callback.asBinder(), callback);
+        mSatelliteCommunicationAccessStateChangedListeners.put(callback.asBinder(), callback);
 
         this.post(() -> {
             try {
                 synchronized (mSatelliteCommunicationAllowStateLock) {
-                    callback.onSatelliteCommunicationAllowedStateChanged(
-                            mCurrentSatelliteAllowedState);
-                    logd("registerForCommunicationAllowedStateChanged: "
+                    callback.onAccessAllowedStateChanged(mCurrentSatelliteAllowedState);
+                    logd("registerForCommunicationAccessStateChanged: "
                             + "mCurrentSatelliteAllowedState " + mCurrentSatelliteAllowedState);
                 }
                 synchronized (mLock) {
@@ -2719,13 +2722,13 @@ public class SatelliteAccessController extends Handler {
                             Optional.ofNullable(mSatelliteAccessConfigMap)
                                     .map(map -> map.get(mRegionalConfigId))
                                     .orElse(null);
-                    callback.onSatelliteAccessConfigurationChanged(satelliteAccessConfig);
-                    logd("registerForCommunicationAllowedStateChanged: satelliteAccessConfig: "
+                    callback.onAccessConfigurationChanged(satelliteAccessConfig);
+                    logd("registerForCommunicationAccessStateChanged: satelliteAccessConfig: "
                             + satelliteAccessConfig + " of mRegionalConfigId: "
                             + mRegionalConfigId);
                 }
             } catch (RemoteException ex) {
-                ploge("registerForCommunicationAllowedStateChanged: RemoteException ex=" + ex);
+                ploge("registerForCommunicationAccessStateChanged: RemoteException ex=" + ex);
             }
         });
 
@@ -2739,18 +2742,18 @@ public class SatelliteAccessController extends Handler {
      * @param subId    The subId of the subscription to unregister for the satellite communication
      *                 allowed state changed.
      * @param callback The callback that was passed to
-     *                 {@link #registerForCommunicationAllowedStateChanged(int,
-     *                 ISatelliteCommunicationAllowedStateCallback)}.
+     *                 {@link #registerForCommunicationAccessStateChanged(int,
+     *                 ISatelliteCommunicationAccessStateCallback)}.
      */
-    public void unregisterForCommunicationAllowedStateChanged(
-            int subId, @NonNull ISatelliteCommunicationAllowedStateCallback callback) {
+    public void unregisterForCommunicationAccessStateChanged(
+            int subId, @NonNull ISatelliteCommunicationAccessStateCallback callback) {
         if (!mFeatureFlags.oemEnabledSatelliteFlag()) {
-            plogd("unregisterForCommunicationAllowedStateChanged: "
+            plogd("unregisterForCommunicationAccessStateChanged: "
                     + "oemEnabledSatelliteFlag is disabled");
             return;
         }
 
-        mSatelliteCommunicationAllowedStateChangedListeners.remove(callback.asBinder());
+        mSatelliteCommunicationAccessStateChangedListeners.remove(callback.asBinder());
     }
 
     /**
@@ -2765,11 +2768,10 @@ public class SatelliteAccessController extends Handler {
             return new ArrayList<>();
         }
 
-        synchronized (mSatelliteDisallowedReasonsLock) {
-            logd("mSatelliteDisallowedReasons:"
-                    + String.join(", ", mSatelliteDisallowedReasons.toString()));
-            return mSatelliteDisallowedReasons;
-        }
+        List<Integer> satelliteDisallowedReasons = getSatelliteDisallowedReasonsCopy();
+        plogd("getSatelliteDisallowedReasons: satelliteDisallowedReasons:"
+                + String.join(", ", satelliteDisallowedReasons.toString()));
+        return satelliteDisallowedReasons;
     }
 
     /**
@@ -2789,14 +2791,13 @@ public class SatelliteAccessController extends Handler {
 
         this.post(() -> {
             try {
-                synchronized (mSatelliteDisallowedReasonsLock) {
-                    callback.onSatelliteDisallowedReasonsChanged(
-                            mSatelliteDisallowedReasons.stream()
-                                    .mapToInt(Integer::intValue)
-                                    .toArray());
-                    logd("registerForSatelliteDisallowedReasonsChanged: "
-                            + "mSatelliteDisallowedReasons " + mSatelliteDisallowedReasons.size());
-                }
+                List<Integer> satelliteDisallowedReasons = getSatelliteDisallowedReasonsCopy();
+                callback.onSatelliteDisallowedReasonsChanged(
+                        satelliteDisallowedReasons.stream()
+                                .mapToInt(Integer::intValue)
+                                .toArray());
+                logd("registerForSatelliteDisallowedReasonsChanged: "
+                        + "satelliteDisallowedReasons " + satelliteDisallowedReasons.size());
             } catch (RemoteException ex) {
                 ploge("registerForSatelliteDisallowedReasonsChanged: RemoteException ex=" + ex);
             }
@@ -2874,28 +2875,29 @@ public class SatelliteAccessController extends Handler {
     private void notifySatelliteCommunicationAllowedStateChanged(boolean allowState) {
         plogd("notifySatelliteCommunicationAllowedStateChanged: allowState=" + allowState);
 
-        List<ISatelliteCommunicationAllowedStateCallback> deadCallersList = new ArrayList<>();
-        mSatelliteCommunicationAllowedStateChangedListeners.values().forEach(listener -> {
+        List<ISatelliteCommunicationAccessStateCallback> deadCallersList = new ArrayList<>();
+        mSatelliteCommunicationAccessStateChangedListeners.values().forEach(listener -> {
             try {
-                listener.onSatelliteCommunicationAllowedStateChanged(allowState);
+                listener.onAccessAllowedStateChanged(allowState);
             } catch (RemoteException e) {
                 plogd("handleEventNtnSignalStrengthChanged RemoteException: " + e);
                 deadCallersList.add(listener);
             }
         });
         deadCallersList.forEach(listener -> {
-            mSatelliteCommunicationAllowedStateChangedListeners.remove(listener.asBinder());
+            mSatelliteCommunicationAccessStateChangedListeners.remove(listener.asBinder());
         });
     }
 
     private void notifySatelliteDisallowedReasonsChanged() {
         plogd("notifySatelliteDisallowedReasonsChanged");
 
+        List<Integer> satelliteDisallowedReasons = getSatelliteDisallowedReasonsCopy();
         List<ISatelliteDisallowedReasonsCallback> deadCallersList = new ArrayList<>();
         mSatelliteDisallowedReasonsChangedListeners.values().forEach(listener -> {
             try {
                 listener.onSatelliteDisallowedReasonsChanged(
-                        mSatelliteDisallowedReasons.stream()
+                        satelliteDisallowedReasons.stream()
                                 .mapToInt(Integer::intValue)
                                 .toArray());
             } catch (RemoteException e) {
@@ -2913,17 +2915,17 @@ public class SatelliteAccessController extends Handler {
         plogd("notifyRegionalSatelliteConfigurationChanged : satelliteAccessConfig is "
                 + satelliteAccessConfig);
 
-        List<ISatelliteCommunicationAllowedStateCallback> deadCallersList = new ArrayList<>();
-        mSatelliteCommunicationAllowedStateChangedListeners.values().forEach(listener -> {
+        List<ISatelliteCommunicationAccessStateCallback> deadCallersList = new ArrayList<>();
+        mSatelliteCommunicationAccessStateChangedListeners.values().forEach(listener -> {
             try {
-                listener.onSatelliteAccessConfigurationChanged(satelliteAccessConfig);
+                listener.onAccessConfigurationChanged(satelliteAccessConfig);
             } catch (RemoteException e) {
                 plogd("handleEventNtnSignalStrengthChanged RemoteException: " + e);
                 deadCallersList.add(listener);
             }
         });
         deadCallersList.forEach(listener -> {
-            mSatelliteCommunicationAllowedStateChangedListeners.remove(listener.asBinder());
+            mSatelliteCommunicationAccessStateChangedListeners.remove(listener.asBinder());
         });
     }
 
@@ -3087,6 +3089,45 @@ public class SatelliteAccessController extends Handler {
         synchronized (mLock) {
             return mRegionalConfigId;
         }
+    }
+
+    private boolean isReasonPresentInSatelliteDisallowedReasons(int disallowedReason) {
+        synchronized (mSatelliteDisallowedReasonsLock) {
+            return mSatelliteDisallowedReasons.contains(Integer.valueOf(disallowedReason));
+        }
+    }
+
+    private void addReasonToSatelliteDisallowedReasons(int disallowedReason) {
+        synchronized (mSatelliteDisallowedReasonsLock) {
+            mSatelliteDisallowedReasons.add(Integer.valueOf(disallowedReason));
+        }
+    }
+
+    private void removeReasonFromSatelliteDisallowedReasons(int disallowedReason) {
+        synchronized (mSatelliteDisallowedReasonsLock) {
+            mSatelliteDisallowedReasons.remove(Integer.valueOf(disallowedReason));
+        }
+    }
+
+    private boolean isSatelliteDisallowedReasonsEmpty() {
+        synchronized (mSatelliteDisallowedReasonsLock) {
+            return mSatelliteDisallowedReasons.isEmpty();
+        }
+    }
+
+    private void removeAllReasonsFromSatelliteDisallowedReasons(
+            List<Integer> disallowedReasonsList) {
+        synchronized (mSatelliteDisallowedReasonsLock) {
+            mSatelliteDisallowedReasons.removeAll(disallowedReasonsList);
+        }
+    }
+
+    private List<Integer> getSatelliteDisallowedReasonsCopy() {
+        List<Integer> satelliteDisallowedReasons;
+        synchronized (mSatelliteDisallowedReasonsLock) {
+            satelliteDisallowedReasons = new ArrayList<>(mSatelliteDisallowedReasons);
+        }
+        return satelliteDisallowedReasons;
     }
 
     private void plogv(@NonNull String log) {
