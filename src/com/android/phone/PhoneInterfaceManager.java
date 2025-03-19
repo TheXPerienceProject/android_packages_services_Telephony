@@ -1161,9 +1161,11 @@ public class PhoneInterfaceManager extends ITelephony.Stub {
                     if (ar.exception == null && ar.result != null) {
                         request.result = ar.result;     // Integer
                     } else {
+// QTI_BEGIN: 2020-07-31: Telephony: Fix error response handling for RIL request
                         // request.result must be set to something non-null
                         // for the calling thread to unblock
                         request.result = new int[]{-1};
+// QTI_END: 2020-07-31: Telephony: Fix error response handling for RIL request
                         if (ar.result == null) {
                             loge("getAllowedNetworkTypesBitmask: Empty response");
                         } else if (ar.exception instanceof CommandException) {
@@ -8453,7 +8455,9 @@ public class PhoneInterfaceManager extends ITelephony.Stub {
             }
 
             boolean isRttSupported = isRttSupported(subscriptionId);
+// QTI_BEGIN: 2020-01-20: Telephony: IMS: Support for MSIM RTT
             boolean isUserRttSettingOn = isUserRttSettingOn(subscriptionId);
+// QTI_END: 2020-01-20: Telephony: IMS: Support for MSIM RTT
             boolean shouldIgnoreUserRttSetting = mApp.getCarrierConfigForSubId(subscriptionId)
                     .getBoolean(CarrierConfigManager.KEY_IGNORE_RTT_MODE_SETTING_BOOL);
             return isRttSupported && (isUserRttSettingOn || shouldIgnoreUserRttSetting);
@@ -8462,6 +8466,7 @@ public class PhoneInterfaceManager extends ITelephony.Stub {
         }
     }
 
+// QTI_BEGIN: 2020-01-20: Telephony: IMS: Support for MSIM RTT
     private boolean isUserRttSettingOn(int subscriptionId) {
         int phoneId = SubscriptionManager.getPhoneId(subscriptionId);
         if (!SubscriptionManager.isValidPhoneId(phoneId)) {
@@ -8477,6 +8482,7 @@ public class PhoneInterfaceManager extends ITelephony.Stub {
         return phoneId != 0 ? Integer.toString(phoneId) : "";
     }
 
+// QTI_END: 2020-01-20: Telephony: IMS: Support for MSIM RTT
     @Deprecated
     @Override
     public String getDeviceId(String callingPackage) {
@@ -15030,5 +15036,26 @@ public class PhoneInterfaceManager extends ITelephony.Stub {
         } finally {
             Binder.restoreCallingIdentity(identity);
         }
+    }
+
+    /**
+     * Get list of applications that are optimized for low bandwidth satellite data.
+     *
+     * @return List of Application Name with data optimized network property.
+     * {@link #PROPERTY_SATELLITE_DATA_OPTIMIZED}
+     */
+    @Override
+    public List<String> getSatelliteDataOptimizedApps() {
+        enforceSatelliteCommunicationPermission("getSatelliteDataOptimizedApps");
+        List<String> appNames = new ArrayList<>();
+        int userId = Binder.getCallingUserHandle().getIdentifier();
+        final long identity = Binder.clearCallingIdentity();
+        try {
+            appNames = mSatelliteController.getSatelliteDataOptimizedApps(userId);
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
+
+        return appNames;
     }
 }
