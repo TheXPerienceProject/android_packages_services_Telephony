@@ -41,7 +41,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerExecutor;
 import android.os.IBinder;
-import android.os.LocaleList;
 import android.os.Looper;
 import android.os.Message;
 import android.os.PermissionEnforcer;
@@ -71,7 +70,6 @@ import com.android.internal.telephony.IccCardConstants;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneConfigurationManager;
 import com.android.internal.telephony.PhoneFactory;
-import com.android.internal.telephony.ServiceStateTracker;
 import com.android.internal.telephony.TelephonyPermissions;
 import com.android.internal.telephony.flags.FeatureFlags;
 import com.android.internal.telephony.subscription.SubscriptionManagerService;
@@ -149,9 +147,6 @@ public class CarrierConfigLoader extends ICarrierConfigLoader.Stub {
     // Broadcast receiver for system events
     @NonNull
     private final BroadcastReceiver mSystemBroadcastReceiver = new ConfigLoaderBroadcastReceiver();
-    // Broadcast receiver for Intent.ACTION_LOCALE_CHANGED
-    @NonNull
-    private final BroadcastReceiver mLocaleReceiver = new ConfigLoaderBroadcastReceiver();
     @NonNull private final LocalLog mCarrierConfigLoadingLog = new LocalLog(256);
     // Number of phone instances (active modem count)
     private int mNumPhones;
@@ -200,8 +195,6 @@ public class CarrierConfigLoader extends ICarrierConfigLoader.Stub {
     private static final int EVENT_BIND_DEFAULT_FOR_NO_SIM_CONFIG_TIMEOUT = 21;
     // Fetching config timed out from the default app for no SIM config.
     private static final int EVENT_FETCH_DEFAULT_FOR_NO_SIM_CONFIG_TIMEOUT = 22;
-    // User changed the locale settings
-    private static final int EVENT_LOCALE_CHANGED = 23;
     // NOTE: any new EVENT_* values must be added to method eventToString().
 
     private static final int BIND_TIMEOUT_MILLIS = 30000;
@@ -310,7 +303,6 @@ public class CarrierConfigLoader extends ICarrierConfigLoader.Stub {
 
                     config = restoreConfigFromXml(mPlatformCarrierConfigPackage, "", phoneId);
                     if (config != null) {
-                        putLocalCarrierNameToConfig(config);
                         mConfigFromDefaultApp[phoneId] = config;
                         Message newMsg = obtainMessage(EVENT_FETCH_DEFAULT_DONE, phoneId, -1);
                         newMsg.getData().putBoolean("loaded_from_xml", true);
@@ -372,7 +364,6 @@ public class CarrierConfigLoader extends ICarrierConfigLoader.Stub {
                                             resultData.getParcelable(KEY_CONFIG_BUNDLE);
                                     saveConfigToXml(mPlatformCarrierConfigPackage, "", phoneId,
                                             carrierId, config);
-                                    putLocalCarrierNameToConfig(config);
                                     mConfigFromDefaultApp[phoneId] = config;
                                     sendMessage(
                                             obtainMessage(
@@ -441,7 +432,6 @@ public class CarrierConfigLoader extends ICarrierConfigLoader.Stub {
                     final PersistableBundle config =
                             restoreConfigFromXml(carrierPackageName, "", phoneId);
                     if (config != null) {
-                        putLocalCarrierNameToConfig(config);
                         mConfigFromCarrierApp[phoneId] = config;
                         Message newMsg = obtainMessage(EVENT_FETCH_CARRIER_DONE, phoneId, -1);
                         newMsg.getData().putBoolean("loaded_from_xml", true);
@@ -502,7 +492,6 @@ public class CarrierConfigLoader extends ICarrierConfigLoader.Stub {
                                     saveConfigToXml(getCarrierPackageForPhoneId(phoneId), "",
                                             phoneId, carrierId, config);
                                     if (config != null) {
-                                        putLocalCarrierNameToConfig(config);
                                         mConfigFromCarrierApp[phoneId] = config;
                                     } else {
                                         logdWithLocalLog("Config from carrier app is null "
@@ -701,16 +690,6 @@ public class CarrierConfigLoader extends ICarrierConfigLoader.Stub {
                                         phoneId, -1), BIND_TIMEOUT_MILLIS);
                     break;
                 }
-
-                case EVENT_LOCALE_CHANGED: {
-                    logd("Locale changed.");
-                    for (int i = 0; i < TelephonyManager.from(mContext).getActiveModemCount(); ++i) {
-                        putLocalCarrierNameToConfig(mConfigFromDefaultApp[i]);
-                        updateSubscriptionDatabase(i);
-                        updateCarrierNameForPhoneId(i);
-                    }
-                    break;
-                }
             }
         }
     }
@@ -738,10 +717,6 @@ public class CarrierConfigLoader extends ICarrierConfigLoader.Stub {
         IntentFilter systemEventsFilter = new IntentFilter();
         systemEventsFilter.addAction(Intent.ACTION_BOOT_COMPLETED);
         context.registerReceiver(mSystemBroadcastReceiver, systemEventsFilter);
-
-        IntentFilter localeFilter = new IntentFilter();
-        localeFilter.addAction(Intent.ACTION_LOCALE_CHANGED);
-        context.registerReceiver(mLocaleReceiver, localeFilter);
 
         mNumPhones = TelephonyManager.from(context).getActiveModemCount();
         mConfigFromDefaultApp = new PersistableBundle[mNumPhones];
@@ -820,53 +795,6 @@ public class CarrierConfigLoader extends ICarrierConfigLoader.Stub {
                     mHandler.obtainMessage(
                             EVENT_DO_FETCH_DEFAULT_FOR_NO_SIM_CONFIG, phoneId, -1));
         }
-    }
-    private void updateCarrierNameForPhoneId(int phoneId) {
-        Phone phone = PhoneFactory.getPhone(phoneId);
-        if (phone != null) {
-            ServiceStateTracker serviceStateTracker = phone.getServiceStateTracker();
-            serviceStateTracker.updateSpnDisplay();
-        }
-    }
-
-    private static void putLocalCarrierNameToConfig(PersistableBundle config) {
-        if (config == null) {
-            return;
-        }
-
-        LocaleList localeList = LocaleList.getDefault();
-        String localCarrierName = null;
-
-        String defaultKey = CarrierConfigManager.KEY_CARRIER_NAME_STRING + "_default";
-        String defaultCarrierName = config.getString(defaultKey, null);
-        if (TextUtils.isEmpty(defaultCarrierName)) {
-            defaultCarrierName = config.getString(CarrierConfigManager.KEY_CARRIER_NAME_STRING, null);
-            config.putString(defaultKey, defaultCarrierName);
-        }
-
-        for (int i = 0; i < localeList.size(); i++) {
-            final Locale locale = localeList.get(i);
-            final String keyWithLang = CarrierConfigManager.KEY_CARRIER_NAME_STRING + "_" + locale.getLanguage();
-            final String keyWithLangAndCountry = keyWithLang + "-r" + locale.getCountry();
-
-            localCarrierName = config.getString(keyWithLangAndCountry, null);
-            if (TextUtils.isEmpty(localCarrierName)) {
-                localCarrierName = config.getString(keyWithLang, null);
-            }
-            if (TextUtils.isEmpty(localCarrierName)) {
-                for (String key : config.keySet()) {
-                    if (key.startsWith(keyWithLang)) {
-                        localCarrierName = config.getString(key, null);
-                        break;
-                    }
-                }
-            }
-            if (!TextUtils.isEmpty(localCarrierName)) {
-                config.putString(CarrierConfigManager.KEY_CARRIER_NAME_STRING, localCarrierName);
-                return;
-            }
-        }
-        config.putString(CarrierConfigManager.KEY_CARRIER_NAME_STRING, defaultCarrierName);
     }
 
     private void updateSubscriptionDatabase(int phoneId) {
@@ -2035,9 +1963,6 @@ public class CarrierConfigLoader extends ICarrierConfigLoader.Stub {
                 case Intent.ACTION_BOOT_COMPLETED:
                     mHandler.sendMessage(mHandler.obtainMessage(EVENT_SYSTEM_UNLOCKED, null));
                     break;
-                case Intent.ACTION_LOCALE_CHANGED:
-                    mHandler.sendMessage(mHandler.obtainMessage(EVENT_LOCALE_CHANGED, null));
-                    break;
             }
         }
     }
@@ -2122,8 +2047,6 @@ public class CarrierConfigLoader extends ICarrierConfigLoader.Stub {
                 return "EVENT_BIND_DEFAULT_FOR_NO_SIM_CONFIG_TIMEOUT";
             case EVENT_FETCH_DEFAULT_FOR_NO_SIM_CONFIG_TIMEOUT:
                 return "EVENT_FETCH_DEFAULT_FOR_NO_SIM_CONFIG_TIMEOUT";
-            case EVENT_LOCALE_CHANGED:
-                return "EVENT_LOCALE_CHANGED";
             default:
                 return "UNKNOWN(" + code + ")";
         }
