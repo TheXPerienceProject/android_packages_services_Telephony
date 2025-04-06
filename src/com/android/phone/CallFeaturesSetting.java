@@ -14,6 +14,12 @@
  * limitations under the License.
  */
 
+/*
+ * Changes from Qualcomm Innovation Center, Inc. are provided under the following license:
+ * Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause-Clear
+ */
+
 package com.android.phone;
 
 import android.app.ActionBar;
@@ -267,6 +273,9 @@ public class CallFeaturesSetting extends PreferenceActivity
                                         getString(R.string.mobile_network_settings_class));
                                 intent.setComponent(mobileNetworkSettingsComponent);
 // QTI_END: 2020-01-30: Telephony: Remove hooks that lauched vendor network settings
+                                if (mPhone != null) {
+                                    intent.putExtra(Settings.EXTRA_SUB_ID, mPhone.getSubId());
+                                }
                                 startActivityAsUser(intent, UserHandle.CURRENT);
                             }
                         };
@@ -463,7 +472,13 @@ public class CallFeaturesSetting extends PreferenceActivity
         Preference gsmOptions = prefSet.findPreference(BUTTON_GSM_UMTS_OPTIONS);
         Preference fdnButton = prefSet.findPreference(BUTTON_FDN_KEY);
         fdnButton.setIntent(mSubscriptionInfoHelper.getIntent(FdnSetting.class));
-        if (carrierConfig.getBoolean(CarrierConfigManager.KEY_WORLD_PHONE_BOOL)) {
+
+        if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY_CDMA)) {
+            prefSet.removePreference(cdmaOptions);
+        }
+
+        if (!Flags.phoneTypeCleanup()
+                && carrierConfig.getBoolean(CarrierConfigManager.KEY_WORLD_PHONE_BOOL)) {
 // QTI_BEGIN: 2019-04-28: Telephony: FR54939: Common call setting for specific operator
             if (carrierConfig.getBoolean("config_common_callsettings_support_bool")) {
                 prefSet.removePreference(cdmaOptions);
@@ -486,7 +501,8 @@ public class CallFeaturesSetting extends PreferenceActivity
 // QTI_END: 2019-04-28: Telephony: FR54939: Common call setting for specific operator
 
             int phoneType = mPhone.getPhoneType();
-            if (carrierConfig.getBoolean(CarrierConfigManager.KEY_HIDE_CARRIER_NETWORK_SETTINGS_BOOL)) {
+            if (carrierConfig.getBoolean(
+                    CarrierConfigManager.KEY_HIDE_CARRIER_NETWORK_SETTINGS_BOOL)) {
                 prefSet.removePreference(fdnButton);
             } else {
                 if (phoneType == PhoneConstants.PHONE_TYPE_CDMA) {

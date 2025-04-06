@@ -524,11 +524,7 @@ public class PhoneGlobals extends ContextWrapper {
     public PhoneGlobals(Context context) {
         super(context);
         sMe = this;
-        if (mFeatureFlags.enforceTelephonyFeatureMappingForPublicApis()) {
-            if (getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) {
-                mSettingsObserver = new SettingsObserver(context, mHandler);
-            }
-        } else {
+        if (getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) {
             mSettingsObserver = new SettingsObserver(context, mHandler);
         }
     }
@@ -538,9 +534,8 @@ public class PhoneGlobals extends ContextWrapper {
 
         ContentResolver resolver = getContentResolver();
 
-        if (mFeatureFlags.enforceTelephonyFeatureMappingForPublicApis()
-                && !getResources().getBoolean(
-                    com.android.internal.R.bool.config_force_phone_globals_creation)) {
+        if (!getResources().getBoolean(
+                com.android.internal.R.bool.config_force_phone_globals_creation)) {
             if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) {
                 Log.v(LOG_TAG, "onCreate()... but not defined FEATURE_TELEPHONY");
                 return;
@@ -587,8 +582,16 @@ public class PhoneGlobals extends ContextWrapper {
                         .getBoolean(R.bool.config_gnss_supl_requires_default_data_for_emergency);
                 int inServiceWaitTimeWhenDialEccInApm = getResources().getInteger(R.integer
                         .config_in_service_wait_timer_when_dialing_emergency_routing_ecc_in_apm);
+                boolean turnOffOemEnabledSatelliteDuringEmergencyCall = getResources().getBoolean(
+                        R.bool.config_turn_off_oem_enabled_satellite_during_emergency_call);
+                boolean turnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall = getResources()
+                        .getBoolean(R.bool
+                            .config_turn_off_non_emergency_nb_iot_ntn_satellite_for_emergency_call);
                 EmergencyStateTracker.make(this, isSuplDdsSwitchRequiredForEmergencyCall,
-                        inServiceWaitTimeWhenDialEccInApm, mFeatureFlags);
+                        inServiceWaitTimeWhenDialEccInApm,
+                        turnOffOemEnabledSatelliteDuringEmergencyCall,
+                        turnOffNonEmergencyNbIotNtnSatelliteForEmergencyCall,
+                        mFeatureFlags);
                 DynamicRoutingController.getInstance().initialize(this);
             }
 
@@ -639,9 +642,11 @@ public class PhoneGlobals extends ContextWrapper {
             // {@link android.telephony.satellite.SatelliteManager}.
             SatelliteController.make(this, mFeatureFlags);
 
-            // Create an instance of CdmaPhoneCallState and initialize it to IDLE
-            cdmaPhoneCallState = new CdmaPhoneCallState();
-            cdmaPhoneCallState.CdmaPhoneCallStateInit();
+            if (!mFeatureFlags.phoneTypeCleanup()) {
+                // Create an instance of CdmaPhoneCallState and initialize it to IDLE
+                cdmaPhoneCallState = new CdmaPhoneCallState();
+                cdmaPhoneCallState.CdmaPhoneCallStateInit();
+            }
 
             // before registering for phone state changes
             mPowerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);

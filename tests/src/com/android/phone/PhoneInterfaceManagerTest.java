@@ -59,6 +59,7 @@ import com.android.internal.telephony.IIntegerConsumer;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.RILConstants;
 import com.android.internal.telephony.flags.FeatureFlags;
+import com.android.internal.telephony.satellite.SatelliteController;
 import com.android.internal.telephony.subscription.SubscriptionManagerService;
 import com.android.phone.satellite.accesscontrol.SatelliteAccessController;
 
@@ -118,6 +119,9 @@ public class PhoneInterfaceManagerTest extends TelephonyTestBase {
         replaceInstance(SatelliteAccessController.class, "sInstance", null,
                 Mockito.mock(SatelliteAccessController.class));
 
+        replaceInstance(SatelliteController.class, "sInstance", null,
+                Mockito.mock(SatelliteController.class));
+
         mSharedPreferences = PreferenceManager.getDefaultSharedPreferences(
                 InstrumentationRegistry.getInstrumentation().getTargetContext());
         doReturn(mSharedPreferences).when(mPhoneGlobals)
@@ -142,7 +146,6 @@ public class PhoneInterfaceManagerTest extends TelephonyTestBase {
         // In order not to affect the existing implementation, define a telephony features
         // and disabled enforce_telephony_feature_mapping_for_public_apis feature flag
         mPhoneInterfaceManager.setFeatureFlags(mFeatureFlags);
-        doReturn(false).when(mFeatureFlags).enforceTelephonyFeatureMappingForPublicApis();
         doReturn(true).when(mFeatureFlags).hsumPackageManager();
         mPhoneInterfaceManager.setPackageManager(mPackageManager);
         doReturn(mPackageManager).when(mPhoneGlobals).getPackageManager();
@@ -508,7 +511,6 @@ public class PhoneInterfaceManagerTest extends TelephonyTestBase {
     @Test
     @EnableCompatChanges({TelephonyManager.ENABLE_FEATURE_MAPPING})
     public void testWithTelephonyFeatureAndCompatChanges() throws Exception {
-        doReturn(true).when(mFeatureFlags).enforceTelephonyFeatureMappingForPublicApis();
         mPhoneInterfaceManager.setFeatureFlags(mFeatureFlags);
         doNothing().when(mPhoneInterfaceManager).enforceModifyPermission();
 
@@ -533,7 +535,6 @@ public class PhoneInterfaceManagerTest extends TelephonyTestBase {
         doReturn(false).when(mPackageManager).hasSystemFeature(
                 PackageManager.FEATURE_TELEPHONY_RADIO_ACCESS);
         mPhoneInterfaceManager.setPackageManager(mPackageManager);
-        doReturn(true).when(mFeatureFlags).enforceTelephonyFeatureMappingForPublicApis();
         mPhoneInterfaceManager.setFeatureFlags(mFeatureFlags);
         doNothing().when(mPhoneInterfaceManager).enforceModifyPermission();
 
