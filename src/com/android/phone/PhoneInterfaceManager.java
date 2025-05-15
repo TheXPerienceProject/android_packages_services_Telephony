@@ -10941,7 +10941,11 @@ public class PhoneInterfaceManager extends ITelephony.Stub {
             UiccSlotInfo[] slotInfos = getUiccSlotsInfo(mApp.getOpPackageName());
             if (slotInfos != null) {
                 for (int i = 0; i < slotInfos.length; i++) {
-                    for (UiccPortInfo portInfo : slotInfos[i].getPorts()) {
+                    UiccSlotInfo slotInfo = slotInfos[i];
+                    if (slotInfo == null) {
+                        continue;
+                    }
+                    for (UiccPortInfo portInfo : slotInfo.getPorts()) {
                         if (SubscriptionManager.isValidPhoneId(portInfo.getLogicalSlotIndex())) {
                             slotMap.add(new UiccSlotMapping(portInfo.getPortIndex(), i,
                                     portInfo.getLogicalSlotIndex()));
@@ -15239,5 +15243,21 @@ public class PhoneInterfaceManager extends ITelephony.Stub {
         }
 
         return satelliteMode;
+    }
+
+    /**
+     * This API can be used by only CTS to ignore plmn list from storage.
+     *
+     * @param enabled Whether to enable boolean config.
+     * @return {@code true} if the value is set successfully, {@code false} otherwise.
+     */
+    public boolean setSatelliteIgnorePlmnListFromStorage(boolean enabled) {
+        Log.d(LOG_TAG, "setSatelliteIgnorePlmnListFromStorage - " + enabled);
+        TelephonyPermissions.enforceShellOnly(
+                Binder.getCallingUid(), "setSatelliteIgnorePlmnListFromStorage");
+        TelephonyPermissions.enforceCallingOrSelfModifyPermissionOrCarrierPrivilege(mApp,
+                SubscriptionManager.INVALID_SUBSCRIPTION_ID,
+                "setSatelliteIgnorePlmnListFromStorage");
+        return mSatelliteController.setSatelliteIgnorePlmnListFromStorage(enabled);
     }
 }
